@@ -1,0 +1,227 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.image as mpgn
+from math import *
+
+import numpy as np
+import matplotlib.image as img
+import matplotlib.pyplot as plt
+
+
+#chevauchement
+
+distnb = lambda p1,p2 : (p1-p2)**2 #calcul de la distance entre deux pixels
+
+def chcalc(ch,t1,t2):
+    """calcul de la moyenne des distances entre pixels"""
+    res=0
+    l=len(t2[0])
+    for i in range (0,len(t1)):
+        for j in range (0,ch):
+            res+=distnb(t1[i,j],t2[i,l-ch+j])
+    return (res/(len(t1)*ch))
+
+def chmain(chmin,chmax,t1,t2):
+    res=3*256**2+1
+    chbest=-1
+    for ch in range(chmin,chmax+1):
+        chval=chcalc(ch,t1,t2)
+        if chval<res:
+            res=chval
+            chbest=ch
+    return chbest
+
+#chemin de coupe
+
+#difference et poids de chemin
+
+def diff (m0,m1):
+    """ calcule toutes les différences de pixels possibles,
+    renvoie un couple de quatre matrice deux pour les lignes et deux pour les colonnes
+    suivant que le pixel de droite(resp. du haut) provienne de m0 ou m1
+    on considère que m0 et m1 provenant du chevauchement sont de même taille
+    peut s'étendre aux images en couleur"""
+    (n,p)=np.shape(m0)
+    col_d=np.zeros((n,p+1))
+    col_g=np.zeros((n,p+1))
+    lin_h=np.zeros((n+1,p))
+    lin_b=np.zeros((n+1,p))
+    infc=float("inf")*np.ones(n)
+    infl=float("inf")*np.ones(p)
+    col_d[:,0]=infc
+    col_d[:,-1]=infc
+    col_g[:,0]=infc
+    col_g[:,-1]=infc
+    lin_h[0]=infl
+    lin_h[-1]=infl
+    lin_b[0]=infl
+    lin_b[-1]=infl
+    for i in range (1,p-1):
+        col_d[:,i]=abs(m0[:,i-1]-m1[:,i])
+        col_g[:,i]=abs(m1[:,i-1]-m0[:,i])
+    for i in range (1,n):
+        lin_h[i]=abs(m1[i-1]-m0[i])
+        lin_b[i]=abs(m0[i-1]-m1[i])
+    return (col_d,col_g,lin_h,lin_b)
+
+
+def meilleur_chemin (m0,m1):
+  """La fonction suivante veut calculer le meilleur des chemins en recherche pixel par pixel en partant des pixels du haut
+  """
+  pm,lm=float("inf"),[]
+  n,p=len(m0),len(m0[0])
+  d,g,h,b = diff(m0,m1)
+  for i in range(1,p): 
+    pc,l=0,[(n,0)]#création de la variable de poids et du début du chemin
+    chemin = np.ones((n+1,p+1)) #création d'une matrice donnant la trace du chemin avec des zéros sur les trois bords haut gauche droite pour éviter de longer les bords
+    chemin[0] = np.zeros(p+1)
+    chemin[:,0]=np.zeros(n+1)
+    chemin[:,p]=np.zeros(n+1) 
+    l.append((0,i))#on fait un premier pas pour avoir les quatres directions disponibles, on évite le dépassement de l'index des matrices
+    pc+=d[0][i]
+    while l[-1][1]!=len(m0):
+      (x,y) = l[-1]
+      pp=float("inf")
+      cp=''
+
+      #On regarde le meilleur pas à faire (s'il existe)
+      if chemin[y+1][x] and d[y][x]<pp:
+        pp=d[y][x]
+        cp='d'
+      if chemin[y-1][x] and g[y-1][x]<pp:
+        pp=g[y-1][x]
+        cp='g'
+      if chemin[y][x+1] and h[y][x]<pp:
+        pp=h[y][x]
+        cp='h'
+      if chemin[y][x-1] and b[y][x-1]<pp:
+        pp=b[y][x-1]
+        cp='b'
+      
+      #Si on a trouvé un pas, on ajoute à l les coordonnée, à pc le poids du pas et on laisse la trace sur chemin et on sort de la boucle
+      if pp!=float("inf"):
+        if cp=='h':
+          l.append(x+1,y)
+          pc+=pp
+          chemin[x][y]=0
+        if cp=='b':
+          l.append(x-1,y)
+          pc+=pp
+          chemin[x][y]=0
+        if cp=='d':
+          l.append(x,y+1)
+          pc+=pp
+          chemin[x][y]=0
+        if cp=='g':
+          l.append(x,y-1)
+          pc+=pp
+          chemin[x][y]=0
+        continue #On retourne alors au début de la boucle
+      
+      #Si aucun chemin n'était possible, on recule et on bouche le chemin pour ne plus "tomber dans le piège"
+      chemin[x][y]=0
+      l.pop()
+      #Fin du while
+    if pc<=pm :#on regarde si le poids du chemin alors créé est meilleur ou non
+      pm=pc
+      lm=l
+  return lm
+
+
+#recollement
+
+def coordonnées (p):
+  """Fonction : passer d'une liste de couple de coordonnées à deux listes distinctes de coordonnées x et y
+  Quand les coordonnées de la coupure ne correspondent pas au coordonnées des pixels du chevauchement. On considère que les coordonnées en entrée correspondent à des points d'intersection entre 4 pixels. on prend comme nouvelle coordonnée le pixel ayant le point d'intersection comme coin en haut a gauche du pixel."""
+  n=len(p)
+  x=[]
+  y=[]
+  for i in range (n):
+    x.append(p[i][0])
+    y.append(p[i][1])
+  return x,y
+
+def traduction (x,y,mche) :
+  """Fonction de traduction
+  La fonction traduction a pour paramètre la liste des abscisses x (venant de l'algo coupure) et les ordonnées y qui matérialisent la couture (ce sont les coordonnées des pixels à gauche du chemin)
+  Renvoit la matrice m (utilisé pour le recollement ) avec des 0 et des 1.
+  mche est une matrice qui fait la taille du chevauchement (cela peut être un decoupage de chevauchement d'une image) Elle sert pour la taille de la matrice m
+  Renvoit la matrice m
+  """
+  long=len (mche)
+  larg=len(mche[0])
+  m=np.zeros ((long,larg),dtype=int) # création de la matrice m
+  for i in range (len(x)-1):
+    a=x[i]-x[i+1]
+    if a==1 : # Permet de savoir quand la couture passe de haut en bas entre deux pixels
+      m[x[i+1],y[i]-1]=1
+    elif a==-1 : # Quand la couture passe de bas en haut
+      m[x[i],y[i]-1]=1
+    elif a!= 0 : return "erreur"  # Si il y a une erreur de continuité
+  if x[-1]==long -1:
+    m[x[-1],y[-1]-1]=1 # Met le dernier 1
+  return m
+
+def image_finale (t1,t2,m,i,j):
+  h=len(m)  #nbr de ligne
+  l=len(t1[0,:i])+len(m[0])+len(t2[0,j:])   #nbr de colonne
+  return np.zeros((h,l))
+
+def recollement (t1,t2,m,i,j):
+  """Foncton de recollement
+  Cette fonction de recollement consiste juste a recopier les pixels des images de part et d'autre de la coupure sans toucher au pixel (pas de fondu ou autre)
+  Documentation :
+  Toutes les matrices sont en format numpy
+  t1 image de gauche, t2 image de droite
+  m matrice de taille du chevauchement avec que des 0 et des 1, les 1 étant les derniers pixels que l'on remplit avec l'image que l'on est en train de copier sur une ligne (Donc juste avant la coupure) (m est de type int).
+  i indice de colonne du début du chevauchement par rapport à l'image t1 (où commence le chevauchement sur l'image t1)
+  j indice  de colonne de fin du chevauchement par rapport à l'image t2 (indice de l'image t2 où se finit le chevauchement)
+  t1, t2 , m ont ici le même nombre de ligne
+  Pour l'image finale j'ai choisi ici pour le nombre de colonne de faire : nbr de colonne de t1 jusqu'à l'indice i (i non inclus) + nbr colonne du chevauchement (m) + nbr de colonne de t2 à partir de l'indice j (inclus ou non je ne sais pas)
+  Il faut faire une fonction qui crée cette image.
+  b est une memoire pour le chevauchement: si b=0 on est en train de copier les pixels de t1, si b=1 on copie les pixels de t2"""
+  a=image_finale (t1,t2,m,i,j)
+  j2=i + len(m[0])  # j2 est l'indice de j sur a
+  for h in range (len(a)):
+      b=0
+      for k in range (len(a[0])):
+        if k<i:
+          a[h,k]=t1[h,k]
+        elif k>= j2:
+          a[h,k]=t2[h,(j+k-j2)]
+        elif k>= i and k<j2:
+          if b==0:
+            if m[h][k-i]==1:
+              b=1
+            a[h,k]=t1[h,k]
+          elif b==1:
+            if m[h,k-i]==1:
+              b=0
+            a[h,k]=t2[h,k-j2+j]
+  return a
+
+
+
+def main(chemin_image):
+    """utilise toutes les fonctions précédentes afin de créer l'image attendue"""
+    g = img.imread(chemin_image)
+    g = np.sum(g,axis=2)
+    #g=g//3
+    lng=len(g)
+    lgg=len(g[0])
+    ch=chmain(lgg//3,2*lgg//3,g,g)
+    print(ch)
+    lm=meilleur_chemin(g[:,lgg-ch:],g[:,:ch])
+    print(lm)
+    c=coordonnées(lm)
+    plt.imshow(g)
+    plt.show()
+    plt.clf()
+    rsl=recollement(g,g,traduction(c[0],c[1],g[:,:ch]),lgg-1,0)
+    plt.imshow(rsl)
+    plt.show()
+    plt.clf()
+    return(len(rsl),len(rsl[0]))
+    
+
+main("path/to/image.png")
