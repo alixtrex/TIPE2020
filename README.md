@@ -2,7 +2,7 @@
 
 Projet : TIPE 2020, NON abouti, En pause
 
-[L'algorithme ne fonctionne pas pour des raisons non déterminé]
+[L'algorithme ne fonctionne pas pour des raisons non déterminées]
 
 Bibliographie:
 
